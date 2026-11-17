@@ -4,6 +4,7 @@ import co.yixiang.yshop.framework.common.pojo.PageResult;
 import co.yixiang.yshop.framework.mybatis.core.mapper.BaseMapperX;
 import co.yixiang.yshop.framework.mybatis.core.query.LambdaQueryWrapperX;
 import co.yixiang.yshop.framework.security.core.util.SecurityFrameworkUtils;
+import co.yixiang.yshop.module.crm.controller.admin.crmachievement.vo.MonthlyMoneySumDTO;
 import co.yixiang.yshop.module.crm.controller.admin.crmanalysis.vo.ContractVO;
 import co.yixiang.yshop.module.crm.controller.admin.crmcontractreceivables.vo.CrmContractReceivablesPageReqVO;
 import co.yixiang.yshop.module.crm.controller.admin.crmcontractreceivables.vo.CrmContractReceivablesRespVO;
@@ -13,8 +14,12 @@ import co.yixiang.yshop.module.crm.dal.dataobject.crmcustomer.CrmCustomerDO;
 import co.yixiang.yshop.module.system.dal.dataobject.user.AdminUserDO;
 import com.github.yulichang.wrapper.MPJLambdaWrapper;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -78,5 +83,48 @@ public interface CrmContractReceivablesMapper extends BaseMapperX<CrmContractRec
             "LEFT JOIN system_users t1 ON (t1.id = t.order_admin_id) " +
             "where t.deleted=0 GROUP BY t.order_admin_id ORDER BY any_value(money) DESC limit 10")
     List<ContractVO> selectReceivablesTop();
+
+    /**
+     * 按负责人 + 月份汇总回款金额（按创建时间，兼容原业绩明细逻辑）
+     */
+    @Select("""
+            <script>
+            SELECT owner_user_id AS ownerUserId, MONTH(create_time) AS `month`, IFNULL(SUM(money), 0) AS money
+            FROM yshop_crm_contract_receivables
+            WHERE deleted = 0
+              AND check_status = #{checkStatus}
+              AND create_time BETWEEN #{startTime} AND #{endTime}
+              AND owner_user_id IN
+              <foreach collection="userIds" item="id" open="(" separator="," close=")">
+                #{id}
+              </foreach>
+            GROUP BY owner_user_id, MONTH(create_time)
+            </script>
+            """)
+    List<MonthlyMoneySumDTO> selectMonthlyMoneySumByCreateTime(@Param("userIds") Collection<Long> userIds,
+                                                               @Param("checkStatus") Integer checkStatus,
+                                                               @Param("startTime") Date startTime,
+                                                               @Param("endTime") Date endTime);
+
+    /**
+     * 汇总回款金额（按回款日期）
+     */
+    @Select("""
+            <script>
+            SELECT IFNULL(SUM(money), 0)
+            FROM yshop_crm_contract_receivables
+            WHERE deleted = 0
+              AND check_status = #{checkStatus}
+              AND return_time BETWEEN #{startTime} AND #{endTime}
+              AND owner_user_id IN
+              <foreach collection="userIds" item="id" open="(" separator="," close=")">
+                #{id}
+              </foreach>
+            </script>
+            """)
+    BigDecimal selectMoneySumByReturnTime(@Param("userIds") Collection<Long> userIds,
+                                          @Param("checkStatus") Integer checkStatus,
+                                          @Param("startTime") Date startTime,
+                                          @Param("endTime") Date endTime);
 
 }

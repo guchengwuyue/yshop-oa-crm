@@ -13,12 +13,15 @@ import co.yixiang.yshop.module.crm.dal.dataobject.crmbusiness.CrmBusinessDO;
 import co.yixiang.yshop.module.crm.dal.dataobject.crmcontract.CrmContractDO;
 import co.yixiang.yshop.module.crm.dal.dataobject.crmcontractreceivables.CrmContractReceivablesDO;
 import co.yixiang.yshop.module.crm.dal.dataobject.crmcustomer.CrmCustomerDO;
+import co.yixiang.yshop.module.crm.dal.dataobject.crmcustomer.CrmCustomerMemberDO;
 import co.yixiang.yshop.module.crm.dal.dataobject.crmcustomercontacts.CrmCustomerContactsDO;
 import co.yixiang.yshop.module.crm.dal.mysql.crmbusiness.CrmBusinessMapper;
 import co.yixiang.yshop.module.crm.dal.mysql.crmcontract.CrmContractMapper;
 import co.yixiang.yshop.module.crm.dal.mysql.crmcontractreceivables.CrmContractReceivablesMapper;
 import co.yixiang.yshop.module.crm.dal.mysql.crmcustomer.CrmCustomerMapper;
+import co.yixiang.yshop.module.crm.dal.mysql.crmcustomer.CrmCustomerMemberMapper;
 import co.yixiang.yshop.module.crm.dal.mysql.crmcustomercontacts.CrmCustomerContactsMapper;
+import co.yixiang.yshop.module.crm.enums.CustomerMemberPermEnum;
 import co.yixiang.yshop.module.crm.enums.CustomerTypesEnum;
 import co.yixiang.yshop.module.crm.enums.RelationEnum;
 import co.yixiang.yshop.module.crm.enums.TypesEnum;
@@ -36,6 +39,9 @@ import org.springframework.validation.annotation.Validated;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static co.yixiang.yshop.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static co.yixiang.yshop.module.crm.enums.ErrorCodeConstants.CUSTOMER_NOT_EXISTS;
@@ -51,6 +57,8 @@ public class CrmCustomerServiceImpl implements CrmCustomerService {
 
     @Resource
     private CrmCustomerMapper customerMapper;
+    @Resource
+    private CrmCustomerMemberMapper customerMemberMapper;
     @Resource
     private CrmOperatelogService crmOperatelogService;
     @Resource
@@ -136,6 +144,7 @@ public class CrmCustomerServiceImpl implements CrmCustomerService {
 
         // 删除
         customerMapper.deleteById(id);
+        customerMemberMapper.deleteByCustomerId(id);
 
         //删除记录
 //        crmRecordMapper.delete(new LambdaQueryWrapper<CrmRecordDO>()
@@ -237,26 +246,39 @@ public class CrmCustomerServiceImpl implements CrmCustomerService {
             }
         }
         PageResult<CrmCustomerRespVO> result = customerMapper.selectPage2(pageReqVO,ids);
-
-        for (CrmCustomerRespVO respVO : result.getList()){
-            //all-所有权限(拥有者) edit-读写权限 read-只读权限"
-            String permission = "all";
-            if(StrUtil.isNotEmpty(respVO.getRoUserId())){
-                List<String> roUsers = StrUtil.split(respVO.getRoUserId(),",");
-                if(roUsers.contains(String.valueOf(adminId))){
-                    permission = "read";
-                }
-            }
-            if(StrUtil.isNotEmpty(respVO.getRwUserId())){
-                List<String> rwUsers = StrUtil.split(respVO.getRwUserId(),",");
-                if(rwUsers.contains(String.valueOf(adminId))){
-                    permission = "edit"; //他只是有修改与跟进、添加相关联系人权限而且 其他比如放入公海等是不可以的
-                }
-            }
-            respVO.setPermission(permission);
-        }
-
+        fillTeamPermission(result.getList(), adminId);
         return result;
+    }
+
+    /**
+     * 按关系表批量填充团队权限：all-拥有者 edit-读写 read-只读
+     */
+    private void fillTeamPermission(List<CrmCustomerRespVO> list, Long adminId) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        List<Long> customerIds = list.stream()
+                .map(CrmCustomerRespVO::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        Map<Long, Integer> permMap = customerMemberMapper
+                .selectListByCustomerIdsAndUserId(customerIds, adminId)
+                .stream()
+                .collect(Collectors.toMap(CrmCustomerMemberDO::getCustomerId, CrmCustomerMemberDO::getPerm, (a, b) ->
+                        CustomerMemberPermEnum.EDIT.getValue().equals(a) || CustomerMemberPermEnum.EDIT.getValue().equals(b)
+                                ? CustomerMemberPermEnum.EDIT.getValue() : a));
+
+        for (CrmCustomerRespVO respVO : list) {
+            Integer perm = permMap.get(respVO.getId());
+            if (CustomerMemberPermEnum.EDIT.getValue().equals(perm)) {
+                // 修改/跟进/添加联系人；放入公海等不可
+                respVO.setPermission(CustomerMemberPermEnum.EDIT.getPermission());
+            } else if (CustomerMemberPermEnum.READ.getValue().equals(perm)) {
+                respVO.setPermission(CustomerMemberPermEnum.READ.getPermission());
+            } else {
+                respVO.setPermission("all");
+            }
+        }
     }
 
 

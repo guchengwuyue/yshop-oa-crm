@@ -61,7 +61,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static co.yixiang.yshop.framework.common.exception.util.ServiceExceptionUtil.exception;
@@ -280,14 +283,43 @@ public class CrmContractServiceImpl implements CrmContractService {
     @Override
     public List<CrmContractProductDO> getContractProductListByContractId(Long contractId) {
         List<CrmContractProductDO> crmContractProductDOS = contractProductMapper.selectListByContractId(contractId);
-        for (CrmContractProductDO contractProductDO : crmContractProductDOS){
-            StoreProductAttrValueDO productAttrValueDO = storeProductAttrValueMapper
-                    .selectOne(new LambdaQueryWrapper<StoreProductAttrValueDO>()
-                            .eq(StoreProductAttrValueDO::getProductId,contractProductDO.getProductId())
-                            .eq(StoreProductAttrValueDO::getUnique,contractProductDO.getProductAttrUnique()));
-            contractProductDO.setSku(productAttrValueDO.getSku());
-        }
+        fillContractProductSku(crmContractProductDOS);
         return crmContractProductDOS;
+    }
+
+    /**
+     * 按 productId 批量查询 SKU，避免逐条 selectOne
+     */
+    private void fillContractProductSku(List<CrmContractProductDO> contractProducts) {
+        if (contractProducts == null || contractProducts.isEmpty()) {
+            return;
+        }
+        Set<Long> productIds = contractProducts.stream()
+                .map(CrmContractProductDO::getProductId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (productIds.isEmpty()) {
+            return;
+        }
+        List<StoreProductAttrValueDO> attrValues = storeProductAttrValueMapper.selectList(
+                new LambdaQueryWrapper<StoreProductAttrValueDO>()
+                        .in(StoreProductAttrValueDO::getProductId, productIds));
+        Map<String, StoreProductAttrValueDO> attrMap = attrValues.stream()
+                .collect(Collectors.toMap(
+                        attr -> buildProductAttrKey(attr.getProductId(), attr.getUnique()),
+                        Function.identity(),
+                        (a, b) -> a));
+        for (CrmContractProductDO contractProductDO : contractProducts) {
+            StoreProductAttrValueDO productAttrValueDO = attrMap.get(
+                    buildProductAttrKey(contractProductDO.getProductId(), contractProductDO.getProductAttrUnique()));
+            if (productAttrValueDO != null) {
+                contractProductDO.setSku(productAttrValueDO.getSku());
+            }
+        }
+    }
+
+    private static String buildProductAttrKey(Long productId, String unique) {
+        return productId + "#" + (unique == null ? "" : unique);
     }
 
 

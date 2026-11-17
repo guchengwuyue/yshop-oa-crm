@@ -1,6 +1,8 @@
 package co.yixiang.yshop.module.crm.dal.mysql.crmachievement;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
 
 import co.yixiang.yshop.framework.common.pojo.PageResult;
 import co.yixiang.yshop.framework.mybatis.core.query.LambdaQueryWrapperX;
@@ -39,6 +41,21 @@ public interface CrmAchievementMapper extends BaseMapperX<CrmAchievementDO> {
                 .eqIfPresent(CrmAchievementDO::getYeartarget, reqVO.getYeartarget())
                 .betweenIfPresent(CrmAchievementDO::getCreateTime, reqVO.getCreateTime())
                 .orderByDesc(CrmAchievementDO::getId));
+    }
+
+    /**
+     * 按对象 ID 批量查询业绩目标
+     */
+    default List<CrmAchievementDO> selectListByTypeIds(Integer type, Collection<Long> typeIds,
+                                                       Integer config, Integer year) {
+        if (typeIds == null || typeIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return selectList(new LambdaQueryWrapperX<CrmAchievementDO>()
+                .eq(CrmAchievementDO::getType, type)
+                .in(CrmAchievementDO::getTypeId, typeIds)
+                .eqIfPresent(CrmAchievementDO::getConfig, config)
+                .eqIfPresent(CrmAchievementDO::getYear, year));
     }
 
 }

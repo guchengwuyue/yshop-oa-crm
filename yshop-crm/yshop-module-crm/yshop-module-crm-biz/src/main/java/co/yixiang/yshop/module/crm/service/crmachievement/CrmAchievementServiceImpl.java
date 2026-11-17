@@ -1,20 +1,20 @@
 package co.yixiang.yshop.module.crm.service.crmachievement;
 
 import cn.hutool.core.date.DateUtil;
-import cn.hutool.core.date.LocalDateTimeUtil;
 import cn.hutool.core.util.NumberUtil;
-import cn.hutool.core.util.ObjectUtil;
 import co.yixiang.yshop.framework.common.enums.CommonStatusEnum;
 import co.yixiang.yshop.framework.common.enums.ShopCommonEnum;
+import co.yixiang.yshop.framework.common.pojo.PageResult;
+import co.yixiang.yshop.framework.common.util.object.BeanUtils;
 import co.yixiang.yshop.framework.mybatis.core.query.LambdaQueryWrapperX;
 import co.yixiang.yshop.framework.security.core.util.SecurityFrameworkUtils;
-import co.yixiang.yshop.module.crm.dal.dataobject.crmcontract.CrmContractDO;
-import co.yixiang.yshop.module.crm.dal.dataobject.crmcontractreceivables.CrmContractReceivablesDO;
+import co.yixiang.yshop.module.crm.controller.admin.crmachievement.vo.*;
+import co.yixiang.yshop.module.crm.dal.dataobject.crmachievement.CrmAchievementDO;
+import co.yixiang.yshop.module.crm.dal.mysql.crmachievement.CrmAchievementMapper;
 import co.yixiang.yshop.module.crm.dal.mysql.crmcontract.CrmContractMapper;
 import co.yixiang.yshop.module.crm.dal.mysql.crmcontractreceivables.CrmContractReceivablesMapper;
 import co.yixiang.yshop.module.crm.enums.ContractStatusEnum;
 import co.yixiang.yshop.module.crm.enums.FlowStepEnum;
-import co.yixiang.yshop.module.crm.enums.RelationEnum;
 import co.yixiang.yshop.module.system.api.user.AdminUserApi;
 import co.yixiang.yshop.module.system.controller.admin.dept.vo.dept.DeptListReqVO;
 import co.yixiang.yshop.module.system.controller.admin.user.vo.user.UserPageReqVO;
@@ -24,28 +24,19 @@ import co.yixiang.yshop.module.system.dal.mysql.user.AdminUserMapper;
 import co.yixiang.yshop.module.system.service.dept.DeptService;
 import co.yixiang.yshop.module.system.service.user.AdminUserService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import org.springframework.stereotype.Service;
 import jakarta.annotation.Resource;
+import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
-import java.time.Year;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import co.yixiang.yshop.module.crm.controller.admin.crmachievement.vo.*;
-import co.yixiang.yshop.module.crm.dal.dataobject.crmachievement.CrmAchievementDO;
-import co.yixiang.yshop.framework.common.pojo.PageResult;
-import co.yixiang.yshop.framework.common.pojo.PageParam;
-import co.yixiang.yshop.framework.common.util.object.BeanUtils;
-
-import co.yixiang.yshop.module.crm.dal.mysql.crmachievement.CrmAchievementMapper;
-
 import static co.yixiang.yshop.framework.common.exception.util.ServiceExceptionUtil.exception;
-import static co.yixiang.yshop.module.crm.enums.ErrorCodeConstants.*;
+import static co.yixiang.yshop.module.crm.enums.ErrorCodeConstants.ACHIEVEMENT_NOT_EXISTS;
 
 /**
  * 业绩目标 Service 实现类
@@ -77,29 +68,29 @@ public class CrmAchievementServiceImpl implements CrmAchievementService {
     @Override
     public void createAchievement(DeptAchieveSaveVO createReqVO) {
 
-        if(createReqVO.getId() == 0){
+        if (createReqVO.getId() == 0) {
             //批量
-            if(FlowStepEnum.TYPE_3.getValue().equals(createReqVO.getAchievementRespVO().getType())){
+            if (FlowStepEnum.TYPE_3.getValue().equals(createReqVO.getAchievementRespVO().getType())) {
                 List<DeptDO> list = deptService.getDeptList(
                         new DeptListReqVO().setStatus(CommonStatusEnum.ENABLE.getStatus()));
-                list.forEach(dept ->{
+                list.forEach(dept -> {
                     createReqVO.setId(dept.getId());
                     createReqVO.setName(dept.getName());
                     saveAchievement(createReqVO);
                 });
-            }else{
+            } else {
                 List<AdminUserDO> list = userService.getUserListByStatus(CommonStatusEnum.ENABLE.getStatus());
-                list.forEach(user ->{
+                list.forEach(user -> {
                     createReqVO.setId(user.getId());
                     createReqVO.setName(user.getNickname());
                     saveAchievement(createReqVO);
                 });
             }
-        }else{
+        } else {
             //单个操作
-            if(FlowStepEnum.TYPE_3.getValue().equals(createReqVO.getAchievementRespVO().getType())){
+            if (FlowStepEnum.TYPE_3.getValue().equals(createReqVO.getAchievementRespVO().getType())) {
                 createReqVO.setName(createReqVO.getName());
-            }else{
+            } else {
                 createReqVO.setName(createReqVO.getNickname());
             }
             saveAchievement(createReqVO);
@@ -110,31 +101,32 @@ public class CrmAchievementServiceImpl implements CrmAchievementService {
 
     /**
      * 添加或者更新
+     *
      * @param createReqVO
      */
-    private void saveAchievement(DeptAchieveSaveVO createReqVO){
+    private void saveAchievement(DeptAchieveSaveVO createReqVO) {
         // 插入
         CrmAchievementDO achievement = BeanUtils.toBean(createReqVO.getAchievementRespVO(), CrmAchievementDO.class);
         achievement.setTypeId(createReqVO.getId());
         achievement.setName(createReqVO.getName());
         LambdaQueryWrapper<CrmAchievementDO> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(CrmAchievementDO::getType,achievement.getType())
-                .eq(CrmAchievementDO::getTypeId,achievement.getTypeId())
-                .eq(CrmAchievementDO::getConfig,achievement.getConfig())
-                .eq(CrmAchievementDO::getYear,achievement.getYear());
+        wrapper.eq(CrmAchievementDO::getType, achievement.getType())
+                .eq(CrmAchievementDO::getTypeId, achievement.getTypeId())
+                .eq(CrmAchievementDO::getConfig, achievement.getConfig())
+                .eq(CrmAchievementDO::getYear, achievement.getYear());
         CrmAchievementDO achievementOld = achievementMapper.selectOne(wrapper);
-        if(achievementOld == null){
+        if (achievementOld == null) {
             achievementMapper.insert(achievement);
-        }else {
+        } else {
             achievement.setId(achievementOld.getId());
             achievementMapper.updateById(achievement);
         }
 
         //更新年目标
         List<BigDecimal> bigDecimals = Arrays.asList(
-                achievement.getJanuary(),achievement.getFebruary(),achievement.getMarch(),achievement.getApril(),
-                achievement.getMay(),achievement.getJune(),achievement.getJuly(),achievement.getAugust(),
-                achievement.getSeptember(),achievement.getOctober(),achievement.getNovember(),achievement.getDecember()
+                achievement.getJanuary(), achievement.getFebruary(), achievement.getMarch(), achievement.getApril(),
+                achievement.getMay(), achievement.getJune(), achievement.getJuly(), achievement.getAugust(),
+                achievement.getSeptember(), achievement.getOctober(), achievement.getNovember(), achievement.getDecember()
         );
         BigDecimal yearTarget = bigDecimals.stream()
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
@@ -176,158 +168,131 @@ public class CrmAchievementServiceImpl implements CrmAchievementService {
         userPageReqVO.setPageNo(pageReqVO.getPageNo());
         userPageReqVO.setPageSize(pageReqVO.getPageSize());
         PageResult<AdminUserDO> pageResult = userService.getUserPage(userPageReqVO);
-        PageResult<UserAchieveRespVO> pageResult1 = BeanUtils.toBean(pageResult,UserAchieveRespVO.class);
+        PageResult<UserAchieveRespVO> pageResult1 = BeanUtils.toBean(pageResult, UserAchieveRespVO.class);
+
+        List<Long> typeIds = pageResult1.getList().stream().map(UserAchieveRespVO::getId).collect(Collectors.toList());
+        Map<Long, CrmAchievementDO> achievementMap = toAchievementMap(
+                achievementMapper.selectListByTypeIds(FlowStepEnum.TYPE_2.getValue(), typeIds,
+                        pageReqVO.getConfig(), pageReqVO.getYear()));
+
         pageResult1.getList().forEach(v -> {
-            CrmAchievementDO crmAchievementDO = achievementMapper.selectOne(new LambdaQueryWrapperX<CrmAchievementDO>()
-                    .eq(CrmAchievementDO::getType, FlowStepEnum.TYPE_2.getValue())
-                    .eq(CrmAchievementDO::getTypeId,v.getId())
-                    .eqIfPresent(CrmAchievementDO::getConfig,pageReqVO.getConfig())
-                    .eqIfPresent(CrmAchievementDO::getYear,pageReqVO.getYear()));
-            if(crmAchievementDO == null){
-                crmAchievementDO = CrmAchievementDO.builder()
-                        .january(BigDecimal.ZERO).february(BigDecimal.ZERO).march(BigDecimal.ZERO)
-                        .april(BigDecimal.ZERO).may(BigDecimal.ZERO).june(BigDecimal.ZERO)
-                        .july(BigDecimal.ZERO).august(BigDecimal.ZERO).september(BigDecimal.ZERO)
-                        .october(BigDecimal.ZERO).november(BigDecimal.ZERO).december(BigDecimal.ZERO)
-                        .yeartarget(BigDecimal.ZERO)
-                        .build();
-            }
-            v.setAchievementRespVO(BeanUtils.toBean(crmAchievementDO,CrmAchievementRespVO.class));
-
-
+            CrmAchievementDO crmAchievementDO = achievementMap.getOrDefault(v.getId(), emptyAchievement());
+            v.setAchievementRespVO(BeanUtils.toBean(crmAchievementDO, CrmAchievementRespVO.class));
         });
 
         return pageResult1;
     }
 
     @Override
-    public List<UserAchieveDetailRespVO> getAchievementDetailCount(CrmAchievementPageReqVO pageReqVO){
+    public List<UserAchieveDetailRespVO> getAchievementDetailCount(CrmAchievementPageReqVO pageReqVO) {
         Long adminId = SecurityFrameworkUtils.getLoginUserId();
         List<Long> ids = new ArrayList<>();
         ids.add(adminId);
         ids.addAll(adminUserApi.getUserListBySubordinateIds(adminId));
         List<AdminUserDO> adminUserDOList = userService.getUserList(ids);
-        List<UserAchieveDetailRespVO> userAchieveRespVOS = BeanUtils.toBean(adminUserDOList,UserAchieveDetailRespVO.class);
+        List<UserAchieveDetailRespVO> userAchieveRespVOS = BeanUtils.toBean(adminUserDOList, UserAchieveDetailRespVO.class);
+
+        Map<Long, CrmAchievementDO> achievementMap = toAchievementMap(
+                achievementMapper.selectListByTypeIds(FlowStepEnum.TYPE_2.getValue(), ids,
+                        pageReqVO.getConfig(), pageReqVO.getYear()));
+
+        Map<Long, Map<Integer, BigDecimal>> monthlyMoneyMap = loadMonthlyMoneyMap(ids, pageReqVO.getYear(), pageReqVO.getConfig());
+
         userAchieveRespVOS.forEach(v -> {
-            if(adminId.equals(v.getId())){
-                v.setNickname(v.getNickname()+"(本人)");
-            }else{
-                v.setNickname(v.getNickname()+"(下属)");
+            if (adminId.equals(v.getId())) {
+                v.setNickname(v.getNickname() + "(本人)");
+            } else {
+                v.setNickname(v.getNickname() + "(下属)");
             }
-            CrmAchievementDO crmAchievementDO = achievementMapper.selectOne(new LambdaQueryWrapperX<CrmAchievementDO>()
-                    .eq(CrmAchievementDO::getType, FlowStepEnum.TYPE_2.getValue())
-                    .eq(CrmAchievementDO::getTypeId,v.getId())
-                    .eqIfPresent(CrmAchievementDO::getConfig,pageReqVO.getConfig())
-                    .eqIfPresent(CrmAchievementDO::getYear,pageReqVO.getYear()));
-            if(ObjectUtil.isNull(crmAchievementDO)){
-                crmAchievementDO = CrmAchievementDO.builder()
-                        .january(BigDecimal.ZERO).february(BigDecimal.ZERO).march(BigDecimal.ZERO)
-                        .april(BigDecimal.ZERO).may(BigDecimal.ZERO).june(BigDecimal.ZERO)
-                        .july(BigDecimal.ZERO).august(BigDecimal.ZERO).september(BigDecimal.ZERO)
-                        .october(BigDecimal.ZERO).november(BigDecimal.ZERO).december(BigDecimal.ZERO)
-                        .yeartarget(BigDecimal.ZERO)
-                        .build();
-            }
+            CrmAchievementDO crmAchievementDO = achievementMap.getOrDefault(v.getId(), emptyAchievement());
+            Map<Integer, BigDecimal> userMonthlyMoney = monthlyMoneyMap.getOrDefault(v.getId(), Collections.emptyMap());
             CrmAchievementDetailRespVO achievementDetailRespVO = CrmAchievementDetailRespVO.builder()
-                    .january(getMap(v.getId(),pageReqVO.getYear(),1,crmAchievementDO.getJanuary(),pageReqVO.getConfig()))
-                    .february(getMap(v.getId(),pageReqVO.getYear(),2,crmAchievementDO.getFebruary(),pageReqVO.getConfig()))
-                    .march(getMap(v.getId(),pageReqVO.getYear(),3,crmAchievementDO.getMarch(),pageReqVO.getConfig()))
-                    .april(getMap(v.getId(),pageReqVO.getYear(),4,crmAchievementDO.getApril(),pageReqVO.getConfig()))
-                    .may(getMap(v.getId(), pageReqVO.getYear(),5,crmAchievementDO.getMay(),pageReqVO.getConfig()))
-                    .june(getMap(v.getId(),pageReqVO.getYear(),6,crmAchievementDO.getJune(),pageReqVO.getConfig()))
-                    .july(getMap(v.getId(),pageReqVO.getYear(),7,crmAchievementDO.getJuly(),pageReqVO.getConfig()))
-                    .august(getMap(v.getId(),pageReqVO.getYear(),8,crmAchievementDO.getAugust(),pageReqVO.getConfig()))
-                    .september(getMap(v.getId(),pageReqVO.getYear(),9,crmAchievementDO.getSeptember(),pageReqVO.getConfig()))
-                    .october(getMap(v.getId(),pageReqVO.getYear(),10,crmAchievementDO.getOctober(),pageReqVO.getConfig()))
-                    .november(getMap(v.getId(),pageReqVO.getYear(),11,crmAchievementDO.getNovember(),pageReqVO.getConfig()))
-                    .december(getMap(v.getId(), pageReqVO.getYear(),12,crmAchievementDO.getDecember(),pageReqVO.getConfig()))
+                    .january(buildMonthMap(userMonthlyMoney.get(1), crmAchievementDO.getJanuary()))
+                    .february(buildMonthMap(userMonthlyMoney.get(2), crmAchievementDO.getFebruary()))
+                    .march(buildMonthMap(userMonthlyMoney.get(3), crmAchievementDO.getMarch()))
+                    .april(buildMonthMap(userMonthlyMoney.get(4), crmAchievementDO.getApril()))
+                    .may(buildMonthMap(userMonthlyMoney.get(5), crmAchievementDO.getMay()))
+                    .june(buildMonthMap(userMonthlyMoney.get(6), crmAchievementDO.getJune()))
+                    .july(buildMonthMap(userMonthlyMoney.get(7), crmAchievementDO.getJuly()))
+                    .august(buildMonthMap(userMonthlyMoney.get(8), crmAchievementDO.getAugust()))
+                    .september(buildMonthMap(userMonthlyMoney.get(9), crmAchievementDO.getSeptember()))
+                    .october(buildMonthMap(userMonthlyMoney.get(10), crmAchievementDO.getOctober()))
+                    .november(buildMonthMap(userMonthlyMoney.get(11), crmAchievementDO.getNovember()))
+                    .december(buildMonthMap(userMonthlyMoney.get(12), crmAchievementDO.getDecember()))
                     .build();
             v.setAchievementRespVO(achievementDetailRespVO);
-
-
         });
 
         return userAchieveRespVOS;
-
     }
 
-
     /**
-     * 获取用户每个月合同与回款完成度
-     * @param userId 用户ID
-     * @param year 年度
-     * @param month 月份
-     * @param target 合同或者回款目标
-     * @param config 1合同 2回款
-     * @return
+     * 一次查出全年各用户按月完成金额，替代 N×12 次 selectList
      */
-    private Map<String, String> getMap(Long userId,Integer year,Integer month,BigDecimal target,Integer config) {
-        //根据某一年某一月 获取当前时间开始与结束时间
-        Calendar calendar = Calendar.getInstance();
-        calendar.set(year,month - 1,1);
-        Date starTime = DateUtil.beginOfMonth(calendar.getTime());
-        Date endTime = DateUtil.endOfMonth(calendar.getTime());
-
-        BigDecimal contractSuccessMoney = BigDecimal.ZERO;
-        BigDecimal receivablesSuccessMoney = BigDecimal.ZERO;
-        String rate = "0.00%";
-        if(ShopCommonEnum.ACH_1.getValue().equals( config)){
-            List<CrmContractDO> crmContractDOS = contractMapper.selectList(new LambdaQueryWrapper<CrmContractDO>()
-                    .eq(CrmContractDO::getOwnerUserId,userId)
-                    .eq(CrmContractDO::getCheckStatus, ContractStatusEnum.STATUS_2.getValue())
-                    .between(CrmContractDO::getOrderTime,starTime,endTime));
-            contractSuccessMoney = crmContractDOS
-                    .stream()
-                    .map(CrmContractDO::getMoney)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            //计算比率
-            if(target.compareTo(BigDecimal.ZERO) != 0){
-                rate = new DecimalFormat("0.00%").format(contractSuccessMoney.divide(target,2, RoundingMode.HALF_UP));
-            }
-        }else{
-            List<CrmContractReceivablesDO> crmContractReceivablesDOS = contractReceivablesMapper.selectList(new LambdaQueryWrapper<CrmContractReceivablesDO>()
-                    .eq(CrmContractReceivablesDO::getOwnerUserId,userId)
-                    .eq(CrmContractReceivablesDO::getCheckStatus, ShopCommonEnum.IS_FINISH_1.getValue())
-                    .between(CrmContractReceivablesDO::getCreateTime,starTime,endTime));
-            receivablesSuccessMoney = crmContractReceivablesDOS
-                    .stream()
-                    .map(CrmContractReceivablesDO::getMoney)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            if(target.compareTo(BigDecimal.ZERO) != 0) {
-                rate = new DecimalFormat("0.00%").format(receivablesSuccessMoney.divide(target, 2, RoundingMode.HALF_UP));
-            }
+    private Map<Long, Map<Integer, BigDecimal>> loadMonthlyMoneyMap(List<Long> userIds, Integer year, Integer config) {
+        if (userIds == null || userIds.isEmpty() || year == null) {
+            return Collections.emptyMap();
         }
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(year, Calendar.JANUARY, 1);
+        Date startTime = DateUtil.beginOfYear(calendar.getTime());
+        Date endTime = DateUtil.endOfYear(calendar.getTime());
 
+        List<MonthlyMoneySumDTO> monthlySums;
+        if (ShopCommonEnum.ACH_1.getValue().equals(config)) {
+            monthlySums = contractMapper.selectMonthlyMoneySum(userIds,
+                    ContractStatusEnum.STATUS_2.getValue(), startTime, endTime);
+        } else {
+            // 明细接口原逻辑：回款按 create_time + IS_FINISH_1 过滤
+            monthlySums = contractReceivablesMapper.selectMonthlyMoneySumByCreateTime(userIds,
+                    ShopCommonEnum.IS_FINISH_1.getValue(), startTime, endTime);
+        }
+        return toUserMonthMoneyMap(monthlySums);
+    }
+
+    private Map<Long, Map<Integer, BigDecimal>> toUserMonthMoneyMap(List<MonthlyMoneySumDTO> monthlySums) {
+        if (monthlySums == null || monthlySums.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Map<Integer, BigDecimal>> result = new HashMap<>();
+        for (MonthlyMoneySumDTO dto : monthlySums) {
+            if (dto.getOwnerUserId() == null || dto.getMonth() == null) {
+                continue;
+            }
+            BigDecimal money = dto.getMoney() == null ? BigDecimal.ZERO : dto.getMoney();
+            result.computeIfAbsent(dto.getOwnerUserId(), k -> new HashMap<>())
+                    .put(dto.getMonth(), money);
+        }
+        return result;
+    }
+
+    private Map<String, String> buildMonthMap(BigDecimal finishMoney, BigDecimal target) {
+        BigDecimal finish = finishMoney == null ? BigDecimal.ZERO : finishMoney;
+        BigDecimal targetMoney = target == null ? BigDecimal.ZERO : target;
+        String rate = "0.00%";
+        if (targetMoney.compareTo(BigDecimal.ZERO) != 0) {
+            rate = new DecimalFormat("0.00%").format(finish.divide(targetMoney, 2, RoundingMode.HALF_UP));
+        }
         Map<String, String> map = new HashMap<>();
-        map.put("finish",contractSuccessMoney.toString());
-        map.put("target",target.toString());
-        map.put("rate",rate);
-
+        map.put("finish", finish.toString());
+        map.put("target", targetMoney.toString());
+        map.put("rate", rate);
         return map;
-
     }
 
     @Override
     public List<DeptAchieveRespVO> getDeptAchieve(Integer type, Integer year) {
         List<DeptDO> list = deptService.getDeptList(
                 new DeptListReqVO().setStatus(CommonStatusEnum.ENABLE.getStatus()));
-        List<DeptAchieveRespVO> achieveRespVOS = BeanUtils.toBean(list,DeptAchieveRespVO.class);
+        List<DeptAchieveRespVO> achieveRespVOS = BeanUtils.toBean(list, DeptAchieveRespVO.class);
+
+        List<Long> typeIds = achieveRespVOS.stream().map(DeptAchieveRespVO::getId).collect(Collectors.toList());
+        Map<Long, CrmAchievementDO> achievementMap = toAchievementMap(
+                achievementMapper.selectListByTypeIds(FlowStepEnum.TYPE_3.getValue(), typeIds, type, year));
+
         achieveRespVOS.forEach(vo -> {
-            CrmAchievementDO crmAchievementDO = achievementMapper.selectOne(new LambdaQueryWrapperX<CrmAchievementDO>()
-                    .eq(CrmAchievementDO::getType, FlowStepEnum.TYPE_3.getValue())
-                    .eq(CrmAchievementDO::getTypeId,vo.getId())
-                    .eqIfPresent(CrmAchievementDO::getConfig,type)
-                    .eqIfPresent(CrmAchievementDO::getYear,year));
-            if(crmAchievementDO == null){
-                crmAchievementDO = CrmAchievementDO.builder()
-                        .january(BigDecimal.ZERO).february(BigDecimal.ZERO).march(BigDecimal.ZERO)
-                        .april(BigDecimal.ZERO).may(BigDecimal.ZERO).june(BigDecimal.ZERO)
-                        .july(BigDecimal.ZERO).august(BigDecimal.ZERO).september(BigDecimal.ZERO)
-                        .october(BigDecimal.ZERO).november(BigDecimal.ZERO).december(BigDecimal.ZERO)
-                        .yeartarget(BigDecimal.ZERO)
-                        .build();
-            }
-            vo.setAchievementRespVO(BeanUtils.toBean(crmAchievementDO,CrmAchievementRespVO.class));
+            CrmAchievementDO crmAchievementDO = achievementMap.getOrDefault(vo.getId(), emptyAchievement());
+            vo.setAchievementRespVO(BeanUtils.toBean(crmAchievementDO, CrmAchievementRespVO.class));
         });
         return achieveRespVOS;
     }
@@ -336,191 +301,58 @@ public class CrmAchievementServiceImpl implements CrmAchievementService {
     public AchieveCountRespVO getCount(Integer type, Integer year, Integer month) {
         List<Long> userIds = new ArrayList<>();
         Long typeId = SecurityFrameworkUtils.getLoginUserId();
-        if(FlowStepEnum.TYPE_2.getValue().equals(type)){
+        if (FlowStepEnum.TYPE_2.getValue().equals(type)) {
             userIds.add(typeId);
-        }else{
+        } else {
             //部门
             AdminUserDO adminUserDO = userMapper.selectById(typeId);
             typeId = adminUserDO.getDeptId();
             Set<Long> deptIds = adminUserService.getDeptCondition(adminUserDO.getDeptId());
-            List<AdminUserDO> adminUserDOS =  userMapper.selectList(new LambdaQueryWrapperX<AdminUserDO>()
-                    .in(AdminUserDO::getDeptId,deptIds));
+            List<AdminUserDO> adminUserDOS = userMapper.selectList(new LambdaQueryWrapperX<AdminUserDO>()
+                    .in(AdminUserDO::getDeptId, deptIds));
             userIds = adminUserDOS.stream().map(AdminUserDO::getId).collect(Collectors.toList());
         }
-        Date starTime = new Date();
-        Date endTime = new Date();
+        Date starTime;
+        Date endTime;
         Calendar calendar = Calendar.getInstance();
 
-        if(month == 0){
+        if (month == 0) {
             //全年
-            calendar.set(year,1,1);
+            calendar.set(year, Calendar.JANUARY, 1);
             starTime = DateUtil.beginOfYear(calendar.getTime());
             endTime = DateUtil.endOfYear(calendar.getTime());
-        }else {
+        } else {
             //某个月
-            calendar.set(year,month - 1,1);
+            calendar.set(year, month - 1, 1);
             starTime = DateUtil.beginOfMonth(calendar.getTime());
             endTime = DateUtil.endOfMonth(calendar.getTime());
         }
 
-        //合同目标
+        //合同目标 / 回款目标
         CrmAchievementDO crmAchievementDO = achievementMapper.selectOne(new LambdaQueryWrapperX<CrmAchievementDO>()
                 .eq(CrmAchievementDO::getType, type)
-                .eq(CrmAchievementDO::getTypeId,typeId)
+                .eq(CrmAchievementDO::getTypeId, typeId)
                 .eqIfPresent(CrmAchievementDO::getConfig, ShopCommonEnum.ACH_1.getValue())
-                .eqIfPresent(CrmAchievementDO::getYear,year));
-        //回款目标
+                .eqIfPresent(CrmAchievementDO::getYear, year));
         CrmAchievementDO crmAchievementDO2 = achievementMapper.selectOne(new LambdaQueryWrapperX<CrmAchievementDO>()
                 .eq(CrmAchievementDO::getType, type)
-                .eq(CrmAchievementDO::getTypeId,typeId)
+                .eq(CrmAchievementDO::getTypeId, typeId)
                 .eqIfPresent(CrmAchievementDO::getConfig, ShopCommonEnum.ACH_2.getValue())
-                .eqIfPresent(CrmAchievementDO::getYear,year));
+                .eqIfPresent(CrmAchievementDO::getYear, year));
 
+        BigDecimal contractSuccessMoney = sumContractMoney(userIds, starTime, endTime);
+        BigDecimal receivablesSuccessMoney = sumReceivablesMoney(userIds, starTime, endTime);
 
-
-        List<CrmContractDO> crmContractDOS = contractMapper.selectList(new LambdaQueryWrapper<CrmContractDO>()
-                .in(CrmContractDO::getOwnerUserId,userIds)
-                .eq(CrmContractDO::getCheckStatus, ContractStatusEnum.STATUS_2.getValue())
-                .between(CrmContractDO::getOrderTime,starTime,endTime));
-        BigDecimal contractSuccessMoney = BigDecimal.ZERO;
-        if(!crmContractDOS.isEmpty()){
-            contractSuccessMoney = crmContractDOS
-                    .stream()
-                    .map(CrmContractDO::getMoney)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-        }
-        List<CrmContractReceivablesDO> crmContractReceivablesDOS = contractReceivablesMapper
-                .selectList(new LambdaQueryWrapper<CrmContractReceivablesDO>()
-                .in(CrmContractReceivablesDO::getOwnerUserId,userIds)
-                .eq(CrmContractReceivablesDO::getCheckStatus, ContractStatusEnum.STATUS_2.getValue())
-                .between(CrmContractReceivablesDO::getReturnTime,starTime,endTime));
-        BigDecimal receivablesSuccessMoney = BigDecimal.ZERO;
-        if(!crmContractReceivablesDOS.isEmpty()){
-            receivablesSuccessMoney = crmContractReceivablesDOS
-                    .stream()
-                    .map(CrmContractReceivablesDO::getMoney)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-        }
-
-        BigDecimal contractMoney = BigDecimal.ZERO;
-        BigDecimal receivablesMoney = BigDecimal.ZERO;
+        BigDecimal contractMoney = resolveMonthTarget(crmAchievementDO, month);
+        BigDecimal receivablesMoney = resolveMonthTarget(crmAchievementDO2, month);
         String contractPer = "0";
         String receivablesPer = "0";
-        switch (month){
-            case 0 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getYeartarget();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getYeartarget();
-                }
-            }
-            case 1 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getJanuary();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getJanuary();
-                }
-            }
-            case 2 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getFebruary();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getFebruary();
-                }
-            }
-            case 3 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getMarch();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getMarch();
-                }
-            }
-            case 4 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getApril();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getApril();
-                }
-            }
-            case 5 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getMay();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getMay();
-                }
-            }
-            case 6 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getJune();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getJune();
-                }
-            }
-            case 7 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getJuly();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getJuly();
-                }
-            }
-            case 8 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getAugust();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getAugust();
-                }
-            }
-            case 9 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getSeptember();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getSeptember();
-                }
-            }
-            case 10 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getOctober();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getOctober();
-                }
-            }
-            case 11 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getNovember();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getNovember();
-                }
-            }
-            case 12 -> {
-                if(crmAchievementDO != null){
-                    contractMoney = crmAchievementDO.getDecember();
-                }
-                if(crmAchievementDO2 != null){
-                    receivablesMoney = crmAchievementDO2.getDecember();
-                }
-            }
-
-
-
-        }
-        if(contractMoney.compareTo(BigDecimal.ZERO) > 0){
-            contractPer = NumberUtil.round(NumberUtil.div(contractSuccessMoney,contractMoney),2)
+        if (contractMoney.compareTo(BigDecimal.ZERO) > 0) {
+            contractPer = NumberUtil.round(NumberUtil.div(contractSuccessMoney, contractMoney), 2)
                     .multiply(new BigDecimal("100")).toString();
         }
-        if(receivablesMoney.compareTo(BigDecimal.ZERO) > 0){
-            receivablesPer = NumberUtil.round(NumberUtil.div(receivablesSuccessMoney,receivablesMoney),2)
+        if (receivablesMoney.compareTo(BigDecimal.ZERO) > 0) {
+            receivablesPer = NumberUtil.round(NumberUtil.div(receivablesSuccessMoney, receivablesMoney), 2)
                     .multiply(new BigDecimal("100")).toString();
         }
 
@@ -531,6 +363,68 @@ public class CrmAchievementServiceImpl implements CrmAchievementService {
                 .receivablesSuccessMoney(receivablesSuccessMoney)
                 .contractPer(contractPer)
                 .receivablesPer(receivablesPer)
+                .build();
+    }
+
+    private BigDecimal sumContractMoney(List<Long> userIds, Date startTime, Date endTime) {
+        if (userIds == null || userIds.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal sum = contractMapper.selectMoneySum(userIds,
+                ContractStatusEnum.STATUS_2.getValue(), startTime, endTime);
+        return sum == null ? BigDecimal.ZERO : sum;
+    }
+
+    private BigDecimal sumReceivablesMoney(List<Long> userIds, Date startTime, Date endTime) {
+        if (userIds == null || userIds.isEmpty()) {
+            return BigDecimal.ZERO;
+        }
+        // 统计接口原逻辑：回款按 return_time + 审核通过
+        BigDecimal sum = contractReceivablesMapper.selectMoneySumByReturnTime(userIds,
+                ContractStatusEnum.STATUS_2.getValue(), startTime, endTime);
+        return sum == null ? BigDecimal.ZERO : sum;
+    }
+
+    private BigDecimal resolveMonthTarget(CrmAchievementDO achievement, Integer month) {
+        if (achievement == null || month == null) {
+            return BigDecimal.ZERO;
+        }
+        return switch (month) {
+            case 0 -> defaultZero(achievement.getYeartarget());
+            case 1 -> defaultZero(achievement.getJanuary());
+            case 2 -> defaultZero(achievement.getFebruary());
+            case 3 -> defaultZero(achievement.getMarch());
+            case 4 -> defaultZero(achievement.getApril());
+            case 5 -> defaultZero(achievement.getMay());
+            case 6 -> defaultZero(achievement.getJune());
+            case 7 -> defaultZero(achievement.getJuly());
+            case 8 -> defaultZero(achievement.getAugust());
+            case 9 -> defaultZero(achievement.getSeptember());
+            case 10 -> defaultZero(achievement.getOctober());
+            case 11 -> defaultZero(achievement.getNovember());
+            case 12 -> defaultZero(achievement.getDecember());
+            default -> BigDecimal.ZERO;
+        };
+    }
+
+    private BigDecimal defaultZero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private Map<Long, CrmAchievementDO> toAchievementMap(List<CrmAchievementDO> list) {
+        if (list == null || list.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return list.stream().collect(Collectors.toMap(CrmAchievementDO::getTypeId, Function.identity(), (a, b) -> a));
+    }
+
+    private CrmAchievementDO emptyAchievement() {
+        return CrmAchievementDO.builder()
+                .january(BigDecimal.ZERO).february(BigDecimal.ZERO).march(BigDecimal.ZERO)
+                .april(BigDecimal.ZERO).may(BigDecimal.ZERO).june(BigDecimal.ZERO)
+                .july(BigDecimal.ZERO).august(BigDecimal.ZERO).september(BigDecimal.ZERO)
+                .october(BigDecimal.ZERO).november(BigDecimal.ZERO).december(BigDecimal.ZERO)
+                .yeartarget(BigDecimal.ZERO)
                 .build();
     }
 }

@@ -43,6 +43,7 @@ public interface CrmCustomerMapper extends BaseMapperX<CrmCustomerDO> {
 
     default PageResult<CrmCustomerRespVO> selectPage2(CrmCustomerPageReqVO reqVO,List<Long> ids) {
         Long adminId = SecurityFrameworkUtils.getLoginUserId();
+        boolean includeTeam = RelationEnum.ALL.getValue().equals(reqVO.getRelation());
         return selectJoinPage(reqVO, CrmCustomerRespVO.class, new MPJLambdaWrapper<CrmCustomerDO>()
                 .selectAll(CrmCustomerDO.class)
                 .selectAs("t1",AdminUserDO::getNickname, CrmCustomerRespVO::getOwnUserName)
@@ -61,14 +62,16 @@ public interface CrmCustomerMapper extends BaseMapperX<CrmCustomerDO> {
                 .eqIfExists(CrmCustomerDO::getSource, reqVO.getSource())
                 .between(reqVO.getNextTime()[0] != null && reqVO.getNextTime()[1] != null
                         ,CrmCustomerDO::getNextTime, reqVO.getNextTime()[0],reqVO.getNextTime()[1])
-//                .in(!ids.isEmpty(),CrmCustomerDO::getOwnerUserId,ids).or().apply(
-//                "FIND_IN_SET ('" + adminId + "',admin_id)"))
-                .and(!ids.isEmpty(),i->i.in(!ids.isEmpty(),CrmCustomerDO::getOwnerUserId,ids).or()
-                        .apply(RelationEnum.ALL.getValue().equals(reqVO.getRelation()),
-                                "FIND_IN_SET ('" + adminId + "',rw_user_id)")
-                        .or()
-                        .apply(RelationEnum.ALL.getValue().equals(reqVO.getRelation()),
-                                "FIND_IN_SET ('" + adminId + "',ro_user_id)"))
+                // 负责人范围 +「全部」时通过关系表匹配团队成员（可走 idx_user_customer）
+                .and(!ids.isEmpty(), w -> {
+                    w.in(CrmCustomerDO::getOwnerUserId, ids);
+                    if (includeTeam) {
+                        w.or().apply("EXISTS (SELECT 1 FROM yshop_crm_customer_member m " +
+                                        "WHERE m.customer_id = t.id AND m.user_id = {0} " +
+                                        "AND m.deleted = 0 AND m.tenant_id = t.tenant_id)",
+                                adminId);
+                    }
+                })
                 .likeIfExists("t1",AdminUserDO::getNickname, reqVO.getOwnUserName())
                 .likeIfExists("t2",AdminUserDO::getNickname, reqVO.getCreateName())
                 .orderByDesc(CrmCustomerDO::getId)

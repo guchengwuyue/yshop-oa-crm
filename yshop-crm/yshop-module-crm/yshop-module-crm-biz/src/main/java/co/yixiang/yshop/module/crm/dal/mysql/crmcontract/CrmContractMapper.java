@@ -4,6 +4,7 @@ import co.yixiang.yshop.framework.common.pojo.PageResult;
 import co.yixiang.yshop.framework.mybatis.core.mapper.BaseMapperX;
 import co.yixiang.yshop.framework.mybatis.core.query.LambdaQueryWrapperX;
 import co.yixiang.yshop.framework.security.core.util.SecurityFrameworkUtils;
+import co.yixiang.yshop.module.crm.controller.admin.crmachievement.vo.MonthlyMoneySumDTO;
 import co.yixiang.yshop.module.crm.controller.admin.crmanalysis.vo.AchievementPageReqVO;
 import co.yixiang.yshop.module.crm.controller.admin.crmanalysis.vo.ContractVO;
 import co.yixiang.yshop.module.crm.controller.admin.crmcontract.vo.CrmContractPageReqVO;
@@ -18,6 +19,8 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -106,6 +109,48 @@ public interface CrmContractMapper extends BaseMapperX<CrmContractDO> {
             "where t.deleted=0 GROUP BY t.order_admin_id ORDER BY any_value(money) DESC limit 10")
     List<ContractVO> selectContractTop();
 
+    /**
+     * 按负责人 + 月份汇总合同金额
+     */
+    @Select("""
+            <script>
+            SELECT owner_user_id AS ownerUserId, MONTH(order_time) AS `month`, IFNULL(SUM(money), 0) AS money
+            FROM yshop_crm_contract
+            WHERE deleted = 0
+              AND check_status = #{checkStatus}
+              AND order_time BETWEEN #{startTime} AND #{endTime}
+              AND owner_user_id IN
+              <foreach collection="userIds" item="id" open="(" separator="," close=")">
+                #{id}
+              </foreach>
+            GROUP BY owner_user_id, MONTH(order_time)
+            </script>
+            """)
+    List<MonthlyMoneySumDTO> selectMonthlyMoneySum(@Param("userIds") Collection<Long> userIds,
+                                                   @Param("checkStatus") Integer checkStatus,
+                                                   @Param("startTime") Date startTime,
+                                                   @Param("endTime") Date endTime);
+
+    /**
+     * 汇总合同金额
+     */
+    @Select("""
+            <script>
+            SELECT IFNULL(SUM(money), 0)
+            FROM yshop_crm_contract
+            WHERE deleted = 0
+              AND check_status = #{checkStatus}
+              AND order_time BETWEEN #{startTime} AND #{endTime}
+              AND owner_user_id IN
+              <foreach collection="userIds" item="id" open="(" separator="," close=")">
+                #{id}
+              </foreach>
+            </script>
+            """)
+    BigDecimal selectMoneySum(@Param("userIds") Collection<Long> userIds,
+                              @Param("checkStatus") Integer checkStatus,
+                              @Param("startTime") Date startTime,
+                              @Param("endTime") Date endTime);
 
     @Update("update yshop_crm_contract set return_money = return_money + #{price} " +
             " where id=#{contractId}")
