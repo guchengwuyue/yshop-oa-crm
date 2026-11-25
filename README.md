@@ -64,7 +64,6 @@ YSHOP意象AI-CRM，面向销售团队的 AI CRM：打通企业微信，多租�
 | 入口 | 说明 |
 |------|------|
 | 演示地址 | https://www.yixiang.co/p/yixiangcrmxitong.html|
-| **二开与定制** | ![联系二维码](assets/code.jpg) |
 
 ---
 
